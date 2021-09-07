@@ -33,6 +33,8 @@ const hugeCommitsCount = "count"
 const path = "path"
 const verbose = "verbose"
 
+var windowsGitBashPath string
+
 // hugeCmd represents the huge command
 var hugeCmd = &cobra.Command{
 	Use:   "huge",
@@ -42,6 +44,7 @@ var hugeCmd = &cobra.Command{
 }
 
 func init() {
+	checkWindowsGitPath()
 	rootCmd.AddCommand(hugeCmd)
 	hugeCmd.Flags().StringP(path, "p", "", "local git repo path.(need absolute path)")
 	hugeCmd.Flags().IntP(hugeCommitsCount, "c", 10, "query git huge commits count")
@@ -55,6 +58,24 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// hugeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+func checkWindowsGitPath() {
+	if runtime.GOOS == "windows" {
+		envList := os.Getenv("path")
+		split := strings.Split(envList, ";")
+		for _, s := range split {
+			if strings.HasSuffix(s, "Git\\cmd") {
+				windowsGitBashPath = strings.Replace(s, "cmd", "git-bash", 1)
+				fmt.Println("found git bash path:" + windowsGitBashPath)
+				break
+			}
+		}
+		if windowsGitBashPath == "" {
+			fmt.Println("not found git-bash in windows path.please check has installed git??")
+			os.Exit(1)
+		}
+	}
 }
 
 func hugeRun(cmd *cobra.Command, args []string) {
@@ -162,16 +183,25 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		}
 	}
 	cleanLogCommand := `rm -rf .git/logs/`
+	if verbose {
+		fmt.Println("will execute clean log command:[" + cleanLogCommand + "]")
+	}
 	_, _, err2 = Exec(repoPath, cleanLogCommand, verbose)
 	if err2 != nil {
 		fmt.Println("clean local git logs failed." + err2.Error())
 	}
 	gcCommand := `git gc`
+	if verbose {
+		fmt.Println("will execute git gc command:[" + gcCommand + "]")
+	}
 	_, _, err2 = Exec(repoPath, gcCommand, verbose)
 	if err2 != nil {
 		fmt.Println("git gc failed." + err2.Error())
 	}
 	pruneCommand := `git prune`
+	if verbose {
+		fmt.Println("will execute git prune command:[" + pruneCommand + "]")
+	}
 	_, _, err2 = Exec(repoPath, pruneCommand, verbose)
 	if err2 != nil {
 		fmt.Println("clean local git logs failed." + err2.Error())
@@ -219,12 +249,7 @@ func mbSize(bytesSize string) (string, error) {
 	return strconv.FormatInt(i, 10) + "Mb", nil
 }
 func Exec(dir, commandString string, isStdout bool) (*exec.Cmd, string, error) {
-	var command *exec.Cmd
-	if runtime.GOOS == "windows" {
-		command = exec.Command("cmd", "/C", commandString)
-	} else {
-		command = exec.Command("bash", "-c", commandString)
-	}
+	command := exec.Command("bash", "-c", commandString)
 	buf := new(bytes.Buffer)
 	var writer io.Writer
 	if isStdout {
