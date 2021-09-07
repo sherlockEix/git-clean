@@ -14,9 +14,8 @@ jobs:
       - name: Set up Go
         run: >
           make win
-          cd dist/windows
-          chmod +x git-clean.exe
-
+          dist/windows/git-clean.exe --help
+          dist/windows/git-clean.exe -p test -v
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v2.2.4
         with:
