@@ -99,7 +99,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("invalid path arg" + err2.Error())
 		return
 	}
-	if strings.EqualFold("", repoPath) {
+	if strings.EqualFold("", strings.TrimSpace(repoPath)) {
 		fmt.Println("path can not be empty")
 		return
 	}
@@ -158,26 +158,27 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		}
 		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n"))
 	}
+	gitFilterBranchTemplate := labelCommand{
+		label:  "git filter-branch for all branches",
+		script: `git filter-branch --force --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+	}
+	gitFilterTagTemplate := labelCommand{
+		label:  "git filter-branch for tag",
+		script: `git filter-branch --force --tag-name-filter cat --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+	}
+	// todo need get tag for judge execute clean tags
+	gitFilterTemplates := []labelCommand{gitFilterBranchTemplate, gitFilterTagTemplate}
 	for _, info := range needsCleanObjects {
-		cleanCommandTemplate := `git filter-branch --force --index-filter 'git rm -rq --cached --ignore-unmatch "%v"' -- --all`
-		cleanCommand := fmt.Sprintf(cleanCommandTemplate, strings.TrimSpace(info.Path))
-		if verbose {
-			fmt.Println("start clean branches,command:[" + cleanCommand + "]")
-		}
-		_, _, err := Exec(repoPath, cleanCommand, true)
-		if err != nil {
-			fmt.Println("git filter-branch clean branch failed." + err.Error())
-			return
-		}
-		cleanTagCommandTemplate := `git filter-branch --force --tag-name-filter cat --index-filter 'git rm -rq --cached --ignore-unmatch "%v"' -- --all`
-		cleanTagCommand := fmt.Sprintf(cleanTagCommandTemplate, strings.TrimSpace(info.Path))
-		if verbose {
-			fmt.Println("start clean tags,command:[" + cleanTagCommand + "]")
-		}
-		_, _, err = Exec(repoPath, cleanTagCommand, true)
-		if err != nil {
-			fmt.Println("git filter-branch clean tags failed." + err.Error())
-			return
+		for _, template := range gitFilterTemplates {
+			shell := strings.Replace(template.script, "(path)", strings.TrimSpace(info.Path), 1)
+			if verbose {
+				fmt.Println("label [" + template.label + "]. will execute [" + shell + "]")
+			}
+			_, _, e := Exec(repoPath, shell, true)
+			if e != nil {
+				utils.RedlnFunc("label [" + template.label + "]. failed execute [" + shell + "]. error:" + e.Error())
+				return
+			}
 		}
 	}
 	cleanLogLabel := labelCommand{label: "del logs", script: `rm -rf .git/logs/`}
@@ -230,7 +231,7 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 		if verbose {
 			fmt.Printf("sha:%v\tpath:%v\tMbSize:%v\tbyteSize:%v\n", gcInfo.SHA, gcInfo.Path, gcInfo.Size, gcInfo.Byte)
 		}
-		if gcInfo.Path != "" {
+		if strings.TrimSpace(gcInfo.Path) != "" {
 			gcInfos = append(gcInfos, gcInfo)
 		}
 	}
