@@ -79,6 +79,8 @@ func checkWindowsGitPath() {
 }
 
 func hugeRun(cmd *cobra.Command, args []string) {
+	// ignore git warning
+	os.Setenv("FILTER_BRANCH_SQUELCH_WARNING", "1")
 	flags := cmd.Flags()
 	hugeCount, err2 := flags.GetInt(hugeCommitsCount)
 	if err2 != nil {
@@ -107,8 +109,8 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("git version failed.please check has install git??" + err.Error())
 		return
 	}
-	fmt.Println("----git objects size----")
-	gitCount := `git count-objects -vH`
+	fmt.Println("----calc git objects size----")
+	gitCount := `git gc && git count-objects -vH`
 	_, _, err = Exec(repoPath, gitCount, true)
 	if err != nil {
 		fmt.Println("git calc objects count failed:" + err.Error())
@@ -131,7 +133,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Printf("%v)\t%v\t%v\t%v\n", index+1, gcInfo.SHA, gcInfo.Path, gcInfo.Size)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
-	needsCleanObjects := []GCInfo{}
+	var needsCleanObjects []GCInfo
 	for scanner.Scan() {
 		text := scanner.Text()
 		if text == "" {
@@ -182,30 +184,29 @@ func hugeRun(cmd *cobra.Command, args []string) {
 			return
 		}
 	}
-	cleanLogCommand := `rm -rf .git/logs/`
+	cleanLogLabel := labelCommand{label: "del logs", script: `rm -rf .git/logs/`}
+	cleanRefLabel := labelCommand{label: "del refs", script: `rm -rf .git/refs/original`}
+	gitGcLabel := labelCommand{label: "git gc", script: `git gc --aggressive --prune=now`}
+	//  need order execute shell
+	orderedLabelCmd := []labelCommand{cleanLogLabel, cleanRefLabel, gitGcLabel}
+	for _, labelCmd := range orderedLabelCmd {
+		if e := cleanGitLog(repoPath, labelCmd, verbose); e != nil {
+			fmt.Println("label [" + labelCmd.label + "].execute [" + labelCmd.script + "] failed." + e.Error())
+			return
+		}
+	}
+}
+
+// clean git log. eg: ref、logs
+func cleanGitLog(repoPath string, labelCmd labelCommand, verbose bool) error {
 	if verbose {
-		fmt.Println("will execute clean log command:[" + cleanLogCommand + "]")
+		fmt.Println("label [" + labelCmd.label + "]. will clean git. command:[" + labelCmd.script + "]")
 	}
-	_, _, err2 = Exec(repoPath, cleanLogCommand, verbose)
-	if err2 != nil {
-		fmt.Println("clean local git logs failed." + err2.Error())
+	_, _, err := Exec(repoPath, labelCmd.script, verbose)
+	if err != nil {
+		return err
 	}
-	gcCommand := `git gc`
-	if verbose {
-		fmt.Println("will execute git gc command:[" + gcCommand + "]")
-	}
-	_, _, err2 = Exec(repoPath, gcCommand, verbose)
-	if err2 != nil {
-		fmt.Println("git gc failed." + err2.Error())
-	}
-	pruneCommand := `git prune`
-	if verbose {
-		fmt.Println("will execute git prune command:[" + pruneCommand + "]")
-	}
-	_, _, err2 = Exec(repoPath, pruneCommand, verbose)
-	if err2 != nil {
-		fmt.Println("clean local git logs failed." + err2.Error())
-	}
+	return nil
 }
 
 func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
@@ -286,4 +287,9 @@ func (g GCInfoSlice) Less(i, j int) bool {
 
 func (g GCInfoSlice) Swap(i, j int) {
 	g[i], g[j] = g[j], g[i]
+}
+
+type labelCommand struct {
+	script string
+	label  string
 }
