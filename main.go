@@ -15,7 +15,9 @@ limitations under the License.
 */
 package main
 
-import "clean-git/cmd"
+import (
+	"clean-git/cmd"
+)
 
 func main() {
 	cmd.Execute()

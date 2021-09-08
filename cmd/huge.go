@@ -18,11 +18,13 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"clean-git/utils"
 	"fmt"
 	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"sort"
 	"strconv"
@@ -67,12 +69,12 @@ func checkWindowsGitPath() {
 		for _, s := range split {
 			if strings.HasSuffix(s, "Git\\cmd") {
 				windowsGitBashPath = strings.Replace(s, "cmd", "git-bash", 1)
-				fmt.Println("found git bash path:" + windowsGitBashPath)
+				utils.BlueLnFunc("found git bash path:" + windowsGitBashPath)
 				break
 			}
 		}
 		if windowsGitBashPath == "" {
-			fmt.Println("not found git-bash in windows path.please check has installed git??")
+			utils.RedlnFunc("not found git-bash in windows path.please check has installed git??")
 			os.Exit(1)
 		}
 	}
@@ -101,16 +103,10 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("path can not be empty")
 		return
 	}
-	fmt.Println("----environment info----")
-	fmt.Println("os:" + runtime.GOOS)
-	gitVersion := `git version`
-	_, _, err := Exec(repoPath, gitVersion, true)
-	if err != nil {
-		fmt.Println("git version failed.please check has install git??" + err.Error())
-		return
-	}
-	fmt.Println("----calc git objects size----")
+	showEnvironmentInfo(repoPath)
+	fmt.Println("---- calc git objects size ----")
 	gitCount := `git gc && git count-objects -vH`
+	var err error
 	_, _, err = Exec(repoPath, gitCount, true)
 	if err != nil {
 		fmt.Println("git calc objects count failed:" + err.Error())
@@ -128,9 +124,9 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Println("cat objects size failed:" + err.Error())
 	}
-	fmt.Println("------- please select indexes for clean -------")
+	utils.BlueLnFunc("------- please select indexes for clean -------")
 	for index, gcInfo := range objectsInfoList {
-		fmt.Printf("%v)\t%v\t%v\t%v\n", index+1, gcInfo.SHA, gcInfo.Path, gcInfo.Size)
+		fmt.Printf(utils.BlueFStr("%v) ", index+1)+"\t%v\t%v\t%v\n", gcInfo.SHA, gcInfo.Path, gcInfo.Size)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var needsCleanObjects []GCInfo
@@ -147,11 +143,11 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		}
 		index, err := strconv.Atoi(text)
 		if err != nil {
-			fmt.Println("invalid input:" + text + "error:" + err.Error())
+			utils.RedlnFunc("invalid input:" + text + "error:" + err.Error())
 			continue
 		}
 		if index > len(objectsInfoList) {
-			fmt.Println("selected index cannot greater than objects size")
+			utils.RedlnFunc("selected index cannot greater than objects size")
 			continue
 		}
 		info := objectsInfoList[index-1]
@@ -160,7 +156,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		for i, g := range needsCleanObjects {
 			pathList[i] = g.Path
 		}
-		fmt.Println("selected:\n" + strings.Join(pathList, "\n"))
+		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n"))
 	}
 	for _, info := range needsCleanObjects {
 		cleanCommandTemplate := `git filter-branch --force --index-filter 'git rm -rq --cached --ignore-unmatch "%v"' -- --all`
@@ -212,8 +208,8 @@ func cleanGitLog(repoPath string, labelCmd labelCommand, verbose bool) error {
 func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 	result = strings.TrimSpace(result)
 	split := strings.Split(result, "\n")
-	gcInfos := make(GCInfoSlice, len(split))
-	for index, line := range split {
+	gcInfos := make(GCInfoSlice, 0)
+	for _, line := range split {
 		runes := []rune(line)
 		sha := string(runes[:40])
 		filePath := string(runes[40:])
@@ -234,7 +230,9 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 		if verbose {
 			fmt.Printf("sha:%v\tpath:%v\tMbSize:%v\tbyteSize:%v\n", gcInfo.SHA, gcInfo.Path, gcInfo.Size, gcInfo.Byte)
 		}
-		gcInfos[index] = gcInfo
+		if gcInfo.Path != "" {
+			gcInfos = append(gcInfos, gcInfo)
+		}
 	}
 	sort.Sort(gcInfos)
 	return gcInfos, nil
@@ -292,4 +290,25 @@ func (g GCInfoSlice) Swap(i, j int) {
 type labelCommand struct {
 	script string
 	label  string
+}
+
+func showEnvironmentInfo(repoPath string) {
+	utils.BlueLnFunc("---- Environment Info ----")
+	fmt.Println(utils.BlueStr("OS:\t") + runtime.GOOS)
+	currentUser, err2 := user.Current()
+	if err2 != nil {
+		utils.RedlnFunc("query user name failed." + err2.Error())
+		return
+	}
+	fmt.Println(utils.BlueStr("Name:\t") + currentUser.Name)
+	gitVersion := `git version`
+	_, versionInfo, err := Exec(repoPath, gitVersion, false)
+	versionInfo = strings.Replace(versionInfo, "git", "", 1)
+	versionInfo = strings.Replace(versionInfo, "version", "", 1)
+	versionInfo = strings.TrimSpace(versionInfo)
+	if err != nil {
+		utils.RedlnFunc("get git version failed.please check has installed git??" + err.Error())
+		return
+	}
+	fmt.Println(utils.BlueStr("Git Version:\t") + versionInfo)
 }
