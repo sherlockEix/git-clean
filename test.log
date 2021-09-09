@@ -1,1 +1,0 @@
-set FILTER_BRANCH_SQUELCH_WARNING=1 && git filter-branch --force --index-filter 'git rm -rq --cached --ignore-unmatch "Java核心技术 卷II 高级特性(原书第9版).pdf"' --prune-empty --tag-name-filter cat -- --all
