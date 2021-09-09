@@ -4,7 +4,7 @@ on:
     branches: [ main ]
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
       - name: Set up Go
@@ -13,9 +13,7 @@ jobs:
           go-version: 1.16
       - name: Set up Go
         run: >
-          make win
-          dist/windows/git-clean.exe --help
-          dist/windows/git-clean.exe -p test -v
+          make all
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v2.2.4
         with:
