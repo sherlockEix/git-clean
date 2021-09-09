@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const hugeCommitsCount = "count"
@@ -104,6 +105,28 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		return
 	}
 	showEnvironmentInfo(repoPath)
+	warning := `
+===========       Warning		==============
+...........Please Back Up Repository...........
+...........Please Back Up Repository...........
+...........Please Back Up Repository...........
+===========       Warning		==============
+	`
+	fmt.Println(utils.RedStr(warning))
+	warningSca := bufio.NewScanner(os.Stdin)
+	fmt.Println(utils.BlueStr("please enter 'y' for confirm. has backup repository"))
+	for warningSca.Scan() {
+		text := warningSca.Text()
+		if text == "" {
+			continue
+		}
+		if "y" == text {
+			break
+		}
+		if "n" == text {
+			return
+		}
+	}
 	fmt.Println("---- calc git objects size ----")
 	gitCount := `git gc && git count-objects -vH`
 	var err error
@@ -112,7 +135,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("git calc objects count failed:" + err.Error())
 		return
 	}
-	fmt.Println("----query top " + strconv.Itoa(hugeCount) + " huge commits----")
+	fmt.Println(utils.BlueStr("----query top " + strconv.Itoa(hugeCount) + " huge commits----"))
 	gitShowTemplate := `git rev-list --objects --all | grep "$(git verify-pack -v .git/objects/pack/*.idx | sort -k 3 -n | tail -(count) | awk '{print$1}')"`
 	gitShow := strings.Replace(gitShowTemplate, "(count)", strconv.Itoa(hugeCount), 1)
 	_, result, err := Exec(repoPath, gitShow, true)
@@ -126,7 +149,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 	utils.BlueLnFunc("------- please select indexes for clean -------")
 	for index, gcInfo := range objectsInfoList {
-		fmt.Printf(utils.BlueFStr("%v) ", index+1)+"\t%v\t%v\t%v\n", gcInfo.SHA, gcInfo.Path, gcInfo.Size)
+		fmt.Printf(utils.BlueFStr("%v) ", index+1)+"\t%v\t%v\t%v\t%v\n", gcInfo.SHA, gcInfo.Type, gcInfo.Path, gcInfo.HumanSize)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var needsCleanObjects []GCInfo
@@ -156,15 +179,16 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		for i, g := range needsCleanObjects {
 			pathList[i] = g.Path
 		}
-		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n"))
+		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n") + "\nEnter 'y' for confirm. Enter 'n' for cancel")
 	}
+	startTime := time.Now()
 	gitFilterBranchTemplate := labelCommand{
 		label:  "git filter-branch for all branches",
-		script: `git filter-branch --force --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+		script: `git filter-branch --prune-empty --force --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
 	}
 	gitFilterTagTemplate := labelCommand{
 		label:  "git filter-branch for tag",
-		script: `git filter-branch --force --tag-name-filter cat --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+		script: `git filter-branch --prune-empty --force --tag-name-filter cat --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
 	}
 	// todo need get tag for judge execute clean tags
 	gitFilterTemplates := []labelCommand{gitFilterBranchTemplate, gitFilterTagTemplate}
@@ -192,6 +216,12 @@ func hugeRun(cmd *cobra.Command, args []string) {
 			return
 		}
 	}
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+	fmt.Println(utils.BlueStr("------- clean complete -------"))
+	fmt.Println(utils.BlueStr("Time:\t" + duration.String()))
+	fmt.Println(utils.BlueStr("use command  `git push --all -f` apply to remote repository branches"))
+	fmt.Println(utils.BlueStr("use command  `git push --tags -f` apply to remote repository tags"))
 }
 
 // clean git log. eg: ref、logs
@@ -213,41 +243,39 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 	for _, line := range split {
 		runes := []rune(line)
 		sha := string(runes[:40])
-		filePath := string(runes[40:])
-		catCommand := "git cat-file -s " + sha
-		_, s, err := Exec(dir, catCommand, verbose)
+		filePath := strings.TrimSpace(string(runes[40:]))
+		humanSize, byteSize, err := getCommitSize(dir, sha, verbose)
 		if err != nil {
 			return nil, err
 		}
-		size, err := fileSize(s)
+		commitType, err := getCommitType(dir, sha, verbose)
 		if err != nil {
 			return nil, err
 		}
-		i, err := strconv.Atoi(strings.TrimSpace(s))
-		if err != nil {
-			return nil, err
+		gcInfo := GCInfo{
+			SHA:       sha,
+			Path:      filePath,
+			HumanSize: humanSize,
+			Byte:      byteSize,
+			Type:      commitType,
 		}
-		gcInfo := GCInfo{SHA: sha, Path: filePath, Size: size, Byte: i}
 		if verbose {
-			fmt.Printf("sha:%v\tpath:%v\tMbSize:%v\tbyteSize:%v\n", gcInfo.SHA, gcInfo.Path, gcInfo.Size, gcInfo.Byte)
+			fmt.Printf("sha:%v\ttype:%v\tpath:%v\tMbSize:%v\tbyteSize:%v\n", gcInfo.SHA, gcInfo.Type, gcInfo.Path, gcInfo.HumanSize, gcInfo.Byte)
 		}
-		if strings.TrimSpace(gcInfo.Path) != "" {
+		if gcInfo.Path != "" {
 			gcInfos = append(gcInfos, gcInfo)
+		} else {
+			fmt.Println("empty:" + sha)
 		}
 	}
 	sort.Sort(gcInfos)
 	return gcInfos, nil
 }
 
-func fileSize(bytesSize string) (string, error) {
-	bytesSize = strings.TrimSpace(bytesSize)
-	parseInt, err := strconv.ParseInt(bytesSize, 10, 64)
-	if err != nil {
-		return "", err
-	}
-	kb := parseInt / 1000
+func byte2HumanSize(bytesSize int64) (string, error) {
+	kb := bytesSize / 1000
 	if kb == 0 {
-		return strconv.FormatInt(parseInt, 10) + " Byte", nil
+		return strconv.FormatInt(bytesSize, 10) + " Byte", nil
 	}
 	mb := kb / 1000
 	if mb == 0 {
@@ -279,10 +307,12 @@ func Exec(dir, commandString string, isStdout bool) (*exec.Cmd, string, error) {
 }
 
 type GCInfo struct {
-	SHA  string
-	Path string
-	Size string
-	Byte int
+	SHA       string
+	Path      string
+	HumanSize string
+	Byte      int64
+	// tree、tag、blob...
+	Type string
 }
 
 type GCInfoSlice []GCInfo
@@ -312,7 +342,7 @@ func showEnvironmentInfo(repoPath string) {
 		utils.RedlnFunc("query user name failed." + err2.Error())
 		return
 	}
-	fmt.Println(utils.BlueStr("Name:\t") + currentUser.Name)
+	fmt.Println(utils.BlueStr("Name:\t") + currentUser.Username)
 	gitVersion := `git version`
 	_, versionInfo, err := Exec(repoPath, gitVersion, false)
 	versionInfo = strings.Replace(versionInfo, "git", "", 1)
@@ -323,4 +353,32 @@ func showEnvironmentInfo(repoPath string) {
 		return
 	}
 	fmt.Println(utils.BlueStr("Git Version:\t") + versionInfo)
+}
+
+// getCommitSize
+func getCommitSize(repoPath, sha string, verbose bool) (string, int64, error) {
+	catCommand := "git cat-file -s " + sha
+	_, byteSize, err := Exec(repoPath, catCommand, verbose)
+	if err != nil {
+		return "", 0, err
+	}
+	byteSize = strings.TrimSpace(byteSize)
+	intByteSize, err := strconv.ParseInt(byteSize, 10, 64)
+	if err != nil {
+		return "", 0, err
+	}
+	humanSize, err := byte2HumanSize(intByteSize)
+	if err != nil {
+		return "", 0, err
+	}
+	return humanSize, intByteSize, nil
+}
+
+func getCommitType(repoPath, sha string, verbose bool) (string, error) {
+	catCommand := "git cat-file -t " + sha
+	_, result, err := Exec(repoPath, catCommand, verbose)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(result), nil
 }
