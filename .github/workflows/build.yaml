@@ -17,5 +17,5 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v2.2.4
         with:
-          name: git-clean-windows.exe
-          path: dist/windows/git-clean.exe
+          name: dist
+          path: dist
