@@ -219,7 +219,7 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		size, err := mbSize(s)
+		size, err := fileSize(s)
 		if err != nil {
 			return nil, err
 		}
@@ -239,14 +239,25 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 	return gcInfos, nil
 }
 
-func mbSize(bytesSize string) (string, error) {
+func fileSize(bytesSize string) (string, error) {
 	bytesSize = strings.TrimSpace(bytesSize)
 	parseInt, err := strconv.ParseInt(bytesSize, 10, 64)
 	if err != nil {
 		return "", err
 	}
-	i := parseInt / 1000 / 1000
-	return strconv.FormatInt(i, 10) + "Mb", nil
+	kb := parseInt / 1000
+	if kb == 0 {
+		return strconv.FormatInt(parseInt, 10) + " Byte", nil
+	}
+	mb := kb / 1000
+	if mb == 0 {
+		return strconv.FormatInt(kb, 10) + " Kb", nil
+	}
+	gb := mb / 1000
+	if gb == 0 {
+		return strconv.FormatInt(mb, 10) + " Mb", nil
+	}
+	return strconv.FormatInt(gb, 10) + " Gb", nil
 }
 func Exec(dir, commandString string, isStdout bool) (*exec.Cmd, string, error) {
 	command := exec.Command("bash", "-c", commandString)

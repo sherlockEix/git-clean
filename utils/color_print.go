@@ -6,10 +6,10 @@ var BlueFunc, BlueLnFunc, RedFunc, RedlnFunc func(a ...interface{})
 var blueColor, redColor *color.Color
 
 func init() {
-	blueColor = color.New(color.FgBlue).Add(color.BgHiWhite).Add(color.Bold)
+	blueColor = color.New(color.FgBlue).Add(color.Bold)
 	BlueFunc = blueColor.PrintFunc()
 	BlueLnFunc = blueColor.PrintlnFunc()
-	redColor = color.New(color.FgHiRed).Add(color.BgHiWhite).Add(color.Bold)
+	redColor = color.New(color.FgHiRed).Add(color.Bold)
 	RedFunc = redColor.PrintFunc()
 	RedlnFunc = redColor.PrintlnFunc()
 }
