@@ -35,6 +35,7 @@ import (
 const hugeCommitsCount = "count"
 const path = "path"
 const verbose = "verbose"
+const version = "1.0.1"
 
 var windowsGitBashPath string
 
@@ -106,11 +107,11 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 	showEnvironmentInfo(repoPath)
 	warning := `
-===========       Warning		==============
-...........Please Back Up Repository...........
-...........Please Back Up Repository...........
-...........Please Back Up Repository...........
-===========       Warning		==============
+=============			Warning			==============
+..............Please Back Up Repository...............
+..............Please Back Up Repository...............
+..............Please Back Up Repository...............
+=============			Warning			==============
 	`
 	fmt.Println(utils.RedStr(warning))
 	warningSca := bufio.NewScanner(os.Stdin)
@@ -127,8 +128,9 @@ func hugeRun(cmd *cobra.Command, args []string) {
 			return
 		}
 	}
-	fmt.Println("---- calc git objects size ----")
+	fmt.Println(utils.BlueStr("---- calc git objects size ----"))
 	gitCount := `git gc && git count-objects -vH`
+	fmt.Println("It may take a while, please wait.......")
 	var err error
 	_, _, err = Exec(repoPath, gitCount, true)
 	if err != nil {
@@ -181,6 +183,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		}
 		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n") + "\nEnter 'y' for confirm. Enter 'n' for cancel")
 	}
+	fmt.Println(utils.BlueStr("will begin clean huge commits.... please wait...."))
 	startTime := time.Now()
 	gitFilterBranchTemplate := labelCommand{
 		label:  "git filter-branch for all branches",
@@ -264,8 +267,6 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 		}
 		if gcInfo.Path != "" {
 			gcInfos = append(gcInfos, gcInfo)
-		} else {
-			fmt.Println("empty:" + sha)
 		}
 	}
 	sort.Sort(gcInfos)
@@ -275,17 +276,17 @@ func getGCInfos(dir, result string, verbose bool) ([]GCInfo, error) {
 func byte2HumanSize(bytesSize int64) (string, error) {
 	kb := bytesSize / 1000
 	if kb == 0 {
-		return strconv.FormatInt(bytesSize, 10) + " Byte", nil
+		return strconv.FormatInt(bytesSize, 10) + "Byte", nil
 	}
 	mb := kb / 1000
 	if mb == 0 {
-		return strconv.FormatInt(kb, 10) + " Kb", nil
+		return strconv.FormatInt(kb, 10) + "Kb", nil
 	}
 	gb := mb / 1000
 	if gb == 0 {
-		return strconv.FormatInt(mb, 10) + " Mb", nil
+		return strconv.FormatInt(mb, 10) + "Mb", nil
 	}
-	return strconv.FormatInt(gb, 10) + " Gb", nil
+	return strconv.FormatInt(gb, 10) + "Gb", nil
 }
 func Exec(dir, commandString string, isStdout bool) (*exec.Cmd, string, error) {
 	command := exec.Command("bash", "-c", commandString)
@@ -343,6 +344,7 @@ func showEnvironmentInfo(repoPath string) {
 		return
 	}
 	fmt.Println(utils.BlueStr("Name:\t") + currentUser.Username)
+	fmt.Println(utils.BlueStr("GitClean Version:\t") + version)
 	gitVersion := `git version`
 	_, versionInfo, err := Exec(repoPath, gitVersion, false)
 	versionInfo = strings.Replace(versionInfo, "git", "", 1)
