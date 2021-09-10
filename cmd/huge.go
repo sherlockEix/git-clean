@@ -105,7 +105,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("path can not be empty")
 		return
 	}
-	showEnvironmentInfo(repoPath)
+	showEnvironmentInfo(repoPath, verbose)
 	warning := `
 =============			Warning			==============
 ..............Please Back Up Repository...............
@@ -335,12 +335,12 @@ type labelCommand struct {
 	label  string
 }
 
-func showEnvironmentInfo(repoPath string) {
+func showEnvironmentInfo(repoPath string, verbose bool) {
 	utils.BlueLnFunc("---- Environment Info ----")
 	fmt.Println(utils.BlueStr("OS:\t") + runtime.GOOS)
-	currentUser, err2 := user.Current()
-	if err2 != nil {
-		utils.RedlnFunc("query user name failed." + err2.Error())
+	currentUser, err := user.Current()
+	if err != nil {
+		utils.RedlnFunc("query user name failed." + err.Error())
 		return
 	}
 	fmt.Println(utils.BlueStr("Name:\t") + currentUser.Username)
@@ -355,6 +355,14 @@ func showEnvironmentInfo(repoPath string) {
 		return
 	}
 	fmt.Println(utils.BlueStr("Git Version:\t") + versionInfo)
+	fmt.Println(utils.BlueStr("Verbose:\t") + strconv.FormatBool(verbose))
+	if verbose {
+		_, info, err := Exec(repoPath, `git config --global --list`, false)
+		if err != nil {
+			return
+		}
+		fmt.Println("========= git config info =========\n" + info)
+	}
 }
 
 // getCommitSize
