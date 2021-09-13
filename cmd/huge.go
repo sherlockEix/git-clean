@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	os_path "path"
 	"runtime"
 	"sort"
 	"strconv"
@@ -185,6 +186,12 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println(utils.BlueStr("will begin clean huge commits.... please wait...."))
 	startTime := time.Now()
+	// prepare path for fast clean
+	pathList := make([]string, 0)
+	for _, info := range needsCleanObjects {
+		pathList = append(pathList, info.Path)
+	}
+	fullPaths := strings.Join(pathList, " ")
 	gitFilterBranchTemplate := labelCommand{
 		label:  "git filter-branch for all branches",
 		script: `git filter-branch --prune-empty --force --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
@@ -195,24 +202,25 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 	// todo need get tag for judge execute clean tags
 	gitFilterTemplates := []labelCommand{gitFilterBranchTemplate, gitFilterTagTemplate}
-	for _, info := range needsCleanObjects {
-		for _, template := range gitFilterTemplates {
-			shell := strings.Replace(template.script, "(path)", strings.TrimSpace(info.Path), 1)
-			if verbose {
-				fmt.Println("label [" + template.label + "]. will execute [" + shell + "]")
-			}
-			_, _, e := Exec(repoPath, shell, true)
-			if e != nil {
-				utils.RedlnFunc("label [" + template.label + "]. failed execute [" + shell + "]. error:" + e.Error())
-				return
-			}
+	for _, template := range gitFilterTemplates {
+		shell := strings.Replace(template.script, "(path)", strings.TrimSpace(fullPaths), 1)
+		if verbose {
+			fmt.Println("label [" + template.label + "]. will execute [" + shell + "]")
+		}
+		_, _, e := Exec(repoPath, shell, true)
+		if e != nil {
+			utils.RedlnFunc("label [" + template.label + "]. failed execute [" + shell + "]. error:" + e.Error())
+			return
 		}
 	}
-	cleanLogLabel := labelCommand{label: "del logs", script: `rm -rf .git/logs/`}
-	cleanRefLabel := labelCommand{label: "del refs", script: `rm -rf .git/refs/original`}
+	gitLogPath := os_path.Join(repoPath, ".git/logs/")
+	err = utils.DelGitFile(gitLogPath)
+	if err != nil {
+		fmt.Println("delete git logs failed." + err.Error())
+		return
+	}
 	gitGcLabel := labelCommand{label: "git gc", script: `git gc --aggressive --prune=now`}
-	//  need order execute shell
-	orderedLabelCmd := []labelCommand{cleanLogLabel, cleanRefLabel, gitGcLabel}
+	orderedLabelCmd := []labelCommand{gitGcLabel}
 	for _, labelCmd := range orderedLabelCmd {
 		if e := cleanGitLog(repoPath, labelCmd, verbose); e != nil {
 			fmt.Println("label [" + labelCmd.label + "].execute [" + labelCmd.script + "] failed." + e.Error())
