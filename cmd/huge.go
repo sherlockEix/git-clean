@@ -1,18 +1,3 @@
-/*
-Copyright © 2021 NAME HERE <EMAIL ADDRESS>
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 package cmd
 
 import (
@@ -169,7 +154,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		}
 		index, err := strconv.Atoi(text)
 		if err != nil {
-			utils.RedlnFunc("invalid input:" + text + "error:" + err.Error())
+			utils.RedStr("invalid input:" + text + "error:" + err.Error())
 			continue
 		}
 		if index > len(objectsInfoList) {
@@ -185,23 +170,32 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n") + "\nEnter 'y' for confirm. Enter 'n' for cancel")
 	}
 	fmt.Println(utils.BlueStr("will begin clean huge commits.... please wait...."))
+	remoteName := "git-clean"
+	err = prepareRemote(repoPath, remoteName, verbose)
+	if err != nil {
+		fmt.Println("prepare remote failed." + err.Error())
+		return
+	}
 	startTime := time.Now()
 	// prepare path for fast clean
 	pathList := make([]string, 0)
 	for _, info := range needsCleanObjects {
-		pathList = append(pathList, info.Path)
+		pathList = append(pathList, `"`+info.Path+`"`)
 	}
 	fullPaths := strings.Join(pathList, " ")
 	gitFilterBranchTemplate := labelCommand{
 		label:  "git filter-branch for all branches",
-		script: `git filter-branch --prune-empty --force --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+		script: `git filter-branch --prune-empty --force --index-filter 'git rm -rf --cached --ignore-unmatch (path)' -- --all`,
 	}
-	gitFilterTagTemplate := labelCommand{
-		label:  "git filter-branch for tag",
-		script: `git filter-branch --prune-empty --force --tag-name-filter cat --index-filter 'git rm -rq --cached --ignore-unmatch "(path)"' -- --all`,
+	gitFilterTemplates := []labelCommand{gitFilterBranchTemplate}
+	tag, err := hasTag(repoPath, verbose)
+	if tag {
+		gitFilterTagTemplate := labelCommand{
+			label:  "git filter-branch for tag",
+			script: `git filter-branch --prune-empty --force --tag-name-filter cat --index-filter 'git rm -rf --cached --ignore-unmatch (path)' -- --all`,
+		}
+		gitFilterTemplates = append(gitFilterTemplates, gitFilterTagTemplate)
 	}
-	// todo need get tag for judge execute clean tags
-	gitFilterTemplates := []labelCommand{gitFilterBranchTemplate, gitFilterTagTemplate}
 	for _, template := range gitFilterTemplates {
 		shell := strings.Replace(template.script, "(path)", strings.TrimSpace(fullPaths), 1)
 		if verbose {
@@ -219,6 +213,12 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		fmt.Println("delete git logs failed." + err.Error())
 		return
 	}
+	gitOriginalPath := os_path.Join(repoPath, ".git/refs/original")
+	err = utils.DelGitFile(gitOriginalPath)
+	if err != nil {
+		fmt.Println("delete git ref original failed." + err.Error())
+		return
+	}
 	gitGcLabel := labelCommand{label: "git gc", script: `git gc --aggressive --prune=now`}
 	orderedLabelCmd := []labelCommand{gitGcLabel}
 	for _, labelCmd := range orderedLabelCmd {
@@ -231,8 +231,37 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	duration := endTime.Sub(startTime)
 	fmt.Println(utils.BlueStr("------- clean complete -------"))
 	fmt.Println(utils.BlueStr("Time:\t" + duration.String()))
-	fmt.Println(utils.BlueStr("use command  `git push --all -f` apply to remote repository branches"))
-	fmt.Println(utils.BlueStr("use command  `git push --tags -f` apply to remote repository tags"))
+	fmt.Println(utils.BlueStr("1. use command  `git push " + remoteName + " --all -f` apply to remote repository branches"))
+	if tag {
+		fmt.Println(utils.BlueStr("2. use command  `git push " + remoteName + " --tags -f` apply to remote repository tags"))
+	}
+}
+
+func prepareRemote(repoPath, remoteName string, verbose bool) error {
+	remoteUrl, err := getRemoteUrl(repoPath, verbose)
+	if err != nil {
+		fmt.Println("get git remote url failed." + err.Error())
+		return err
+	}
+	addRemoteCmd := labelCommand{
+		label:  "add " + remoteName + " remote",
+		script: "git remote add " + remoteName + " " + remoteUrl,
+	}
+	fetchRemoteCmd := labelCommand{
+		label:  "fetch" + remoteName + " remote",
+		script: "git fetch " + remoteName,
+	}
+	labelCommands := []labelCommand{addRemoteCmd, fetchRemoteCmd}
+	for _, cmd := range labelCommands {
+		if verbose {
+			fmt.Println("label [" + cmd.label + "]. command:[" + cmd.script + "]")
+		}
+		_, _, err = Exec(repoPath, cmd.script, verbose)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // clean git log. eg: ref、logs
@@ -339,8 +368,8 @@ func (g GCInfoSlice) Swap(i, j int) {
 }
 
 type labelCommand struct {
-	script string
 	label  string
+	script string
 }
 
 func showEnvironmentInfo(repoPath string, verbose bool) {
@@ -364,13 +393,6 @@ func showEnvironmentInfo(repoPath string, verbose bool) {
 	}
 	fmt.Println(utils.BlueStr("Git Version:\t") + versionInfo)
 	fmt.Println(utils.BlueStr("Verbose:\t") + strconv.FormatBool(verbose))
-	if verbose {
-		_, info, err := Exec(repoPath, `git config --global --list`, false)
-		if err != nil {
-			return
-		}
-		fmt.Println("========= git config info =========\n" + info)
-	}
 }
 
 // getCommitSize
@@ -399,4 +421,30 @@ func getCommitType(repoPath, sha string, verbose bool) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(result), nil
+}
+
+// getRemoteUrl get current repo remote url
+func getRemoteUrl(repoPath string, verbose bool) (string, error) {
+	command := `git config --get remote.origin.url`
+	_, result, err := Exec(repoPath, command, false)
+	if err != nil {
+		return "", err
+	}
+	if verbose {
+		fmt.Println("remote.origin.url is [" + result + "]")
+	}
+	return result, nil
+}
+
+// hasTag current repo has tag
+func hasTag(repoPath string, verbose bool) (bool, error) {
+	command := `git tag`
+	_, result, err := Exec(repoPath, command, false)
+	if err != nil {
+		return false, err
+	}
+	if verbose {
+		fmt.Println("tag list is [" + result + "]")
+	}
+	return strings.TrimSpace(result) != "", nil
 }
