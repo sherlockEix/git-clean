@@ -231,9 +231,9 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	duration := endTime.Sub(startTime)
 	fmt.Println(utils.BlueStr("------- clean complete -------"))
 	fmt.Println(utils.BlueStr("Time:\t" + duration.String()))
-	fmt.Println(utils.BlueStr("1. use command  `git push " + remoteName + " --all -f` apply to remote repository branches"))
+	fmt.Println(utils.BlueStr("1. use command  `git push  --all -f` apply to remote repository branches"))
 	if tag {
-		fmt.Println(utils.BlueStr("2. use command  `git push " + remoteName + " --tags -f` apply to remote repository tags"))
+		fmt.Println(utils.BlueStr("2. use command  `git push  --tags -f` apply to remote repository tags"))
 	}
 }
 
