@@ -266,7 +266,7 @@ func prepareRemote(repoPath, remoteName string, verbose bool) error {
 // clean git log. eg: ref、logs
 func cleanGitLog(repoPath string, labelCmd labelCommand, verbose bool) error {
 	if verbose {
-		fmt.Println("label [" + labelCmd.label + "]. will clean git. command:[" + labelCmd.script + "]")
+		fmt.Println("DEBUG: label [" + labelCmd.label + "]. command:[" + labelCmd.script + "]")
 	}
 	_, _, err := Exec(repoPath, labelCmd.script, verbose)
 	if err != nil {
