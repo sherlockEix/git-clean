@@ -170,7 +170,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 		utils.RedlnFunc("selected:\n" + strings.Join(pathList, "\n") + "\nEnter 'y' for confirm. Enter 'n' for cancel")
 	}
 	fmt.Println(utils.BlueStr("will begin clean huge commits.... please wait...."))
-	remoteName := "git-clean"
+	remoteName := "clean"
 	err = prepareRemote(repoPath, remoteName, verbose)
 	if err != nil {
 		fmt.Println("prepare remote failed." + err.Error())
@@ -199,7 +199,7 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	for _, template := range gitFilterTemplates {
 		shell := strings.Replace(template.script, "(path)", strings.TrimSpace(fullPaths), 1)
 		if verbose {
-			fmt.Println("label [" + template.label + "]. will execute [" + shell + "]")
+			fmt.Println("DEBUG: label [" + template.label + "]. command [" + shell + "]")
 		}
 		_, _, e := Exec(repoPath, shell, true)
 		if e != nil {
@@ -238,25 +238,24 @@ func hugeRun(cmd *cobra.Command, args []string) {
 }
 
 func prepareRemote(repoPath, remoteName string, verbose bool) error {
-	remoteUrl, err := getRemoteUrl(repoPath, verbose)
-	if err != nil {
-		fmt.Println("get git remote url failed." + err.Error())
-		return err
+	renameRemote := labelCommand{
+		label:  "rename remote",
+		script: "git remote rename origin " + remoteName,
 	}
-	addRemoteCmd := labelCommand{
-		label:  "add " + remoteName + " remote",
-		script: "git remote add " + remoteName + " " + remoteUrl,
+	cpOriginRemote := labelCommand{
+		label:  "copy remote branches",
+		script: "cp -R .git/refs/remotes/" + remoteName + "/* .git/refs/heads/",
 	}
-	fetchRemoteCmd := labelCommand{
-		label:  "fetch" + remoteName + " remote",
-		script: "git fetch " + remoteName,
+	delHead := labelCommand{
+		label:  "delete head",
+		script: "rm -rf .git/refs/heads/HEAD",
 	}
-	labelCommands := []labelCommand{addRemoteCmd, fetchRemoteCmd}
+	labelCommands := []labelCommand{renameRemote, cpOriginRemote, delHead}
 	for _, cmd := range labelCommands {
 		if verbose {
-			fmt.Println("label [" + cmd.label + "]. command:[" + cmd.script + "]")
+			fmt.Println("DEBUG: label [" + cmd.label + "]. command:[" + cmd.script + "]")
 		}
-		_, _, err = Exec(repoPath, cmd.script, verbose)
+		_, _, err := Exec(repoPath, cmd.script, verbose)
 		if err != nil {
 			return err
 		}
@@ -421,19 +420,6 @@ func getCommitType(repoPath, sha string, verbose bool) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(result), nil
-}
-
-// getRemoteUrl get current repo remote url
-func getRemoteUrl(repoPath string, verbose bool) (string, error) {
-	command := `git config --get remote.origin.url`
-	_, result, err := Exec(repoPath, command, false)
-	if err != nil {
-		return "", err
-	}
-	if verbose {
-		fmt.Println("remote.origin.url is [" + result + "]")
-	}
-	return result, nil
 }
 
 // hasTag current repo has tag
