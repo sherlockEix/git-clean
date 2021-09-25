@@ -171,9 +171,9 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println(utils.BlueStr("will begin clean huge commits.... please wait...."))
 	remoteName := "clean"
-	err = prepareRemote(repoPath, remoteName, verbose)
+	err = prepareGitDir(repoPath, remoteName, verbose)
 	if err != nil {
-		fmt.Println("prepare remote failed." + err.Error())
+		fmt.Println("rename remote failed." + err.Error())
 		return
 	}
 	startTime := time.Now()
@@ -237,7 +237,24 @@ func hugeRun(cmd *cobra.Command, args []string) {
 	}
 }
 
-func prepareRemote(repoPath, remoteName string, verbose bool) error {
+func prepareGitDir(repoPath, remoteName string, verbose bool) error {
+	showRemote := labelCommand{
+		label:  "show remote",
+		script: "git remote show ",
+	}
+	_, showResult, err := Exec(repoPath, showRemote.script, verbose)
+	if err != nil {
+		return err
+	}
+	split := strings.Split(strings.TrimSpace(showResult), "\n")
+	hasExistClenRemote := func() bool {
+		for _, s := range split {
+			if strings.TrimSpace(s) == remoteName {
+				return true
+			}
+		}
+		return false
+	}()
 	renameRemote := labelCommand{
 		label:  "rename remote",
 		script: "git remote rename origin " + remoteName,
@@ -252,6 +269,9 @@ func prepareRemote(repoPath, remoteName string, verbose bool) error {
 	}
 	labelCommands := []labelCommand{renameRemote, cpOriginRemote, delHead}
 	for _, cmd := range labelCommands {
+		if hasExistClenRemote && cmd == renameRemote {
+			continue
+		}
 		if verbose {
 			fmt.Println("DEBUG: label [" + cmd.label + "]. command:[" + cmd.script + "]")
 		}
